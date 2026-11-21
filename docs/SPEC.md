@@ -13,7 +13,8 @@ If tmux is already running, reload the edited config and open a new pane for com
 A snapshot includes session and window names, window order and links, pane splits and zoom, working directories, and the plain-text scrollback tmux still holds.
 
 - **Alt-S** requests a save. Wait for `Tmux workspace saved.` before a planned restart.
-- Autosave runs after ten seconds of quiet following a layout change, about five minutes without a save, and after the last client detaches.
+- Autosave runs after ten seconds of quiet following a structural change, such as reordering windows or changing pane splits. It also runs about five minutes after the last save, and after the last client detaches.
+- Switching between existing windows, typing shell commands, and generating terminal output are picked up by the next snapshot. The periodic timer keeps these changes backed up even when the layout stays the same.
 - The latest ten snapshots are kept by default. Edit the timing, retention, or save key in the marked tmux config block.
 
 ### Restore and replay

@@ -1,6 +1,6 @@
 # tmux-restore
 
-Bring back your tmux windows, pane layouts, working directories, and scrollback after a restart.
+Bring back your tmux sessions, window order, pane layouts, working directories, and scrollback after a restart.
 
 ## Quick start
 
@@ -16,8 +16,10 @@ Approve the tmux config diff. Accept a Bash or zsh hook if you want command repl
 
 ## Everyday use
 
-- **Save** with **Alt-S**. Autosave also runs in the background.
-- **Restore** with `tmux attach` after a tmux server restart.
-- **Replay** a suggested command with **r**. Press any other key to dismiss it.
+**Autosave** runs after 10 seconds of quiet following a layout change. After about 5 minutes without a save, a periodic snapshot picks up changes like new scrollback from ordinary shell activity. Press **Alt-S** to save on demand.
+
+**Restore** with `tmux attach` after a tmux server restart. Panes reopen in their saved directories with their scrollback.
+
+**Optional command replay** is available with a Bash or zsh hook. If a recorded command was running at save time, the pane offers to rerun it. Press **r** or **R** to run the full command from its original starting directory. Press any other key to continue in the restored pane.
 
 [Spec and implementation notes](docs/SPEC.md)
