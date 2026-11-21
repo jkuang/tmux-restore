@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+set -o pipefail
+umask 077
+
+TR_REPO=$(cd -- "${BASH_SOURCE[0]%/*}/.." && pwd -P) || exit 1
+TR_CLI=$TR_REPO/bin/tmux-restore
+TR_STATE=${TMUX_RESTORE_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/tmux-restore}
+TR_PLATFORM=$(uname -s) || exit 1
+TR_SOCKET=
+if [[ ${1:-} == --socket && $# -ge 2 ]]; then
+    TR_SOCKET=$2
+    shift 2
+elif [[ -n ${TMUX:-} ]]; then
+    TR_SOCKET=${TMUX%,*}
+    TR_SOCKET=${TR_SOCKET%,*}
+fi
+
+source "$TR_REPO/lib/common.sh" || exit 1
+source "$TR_REPO/shell/command-record.sh" || exit 1
+source "$TR_REPO/lib/command.sh" || exit 1
+source "$TR_REPO/lib/snapshot.sh" || exit 1
+source "$TR_REPO/lib/restore.sh" || exit 1
+source "$TR_REPO/lib/schedule.sh" || exit 1
+
+usage() { printf '%s\n' 'Usage: tmux-restore [--socket PATH] {save|load|status}'; }
+action=${1:-help}
+case $action in
+    help|-h|--help) usage; exit 0 ;;
+    save|load|status|_install|_worker|_loop|_detach|_save|_load|_recover) shift ;;
+    *) usage >&2; exit 2 ;;
+esac
+
+if ! command -v tmux >/dev/null; then tr_error 'tmux 3.8 or newer is required.'; exit 1; fi
+case $TR_PLATFORM in Darwin) dependency=lockf ;; *) dependency=flock ;; esac
+if ! command -v "$dependency" >/dev/null; then tr_error "$dependency is required for save and restore locking."; exit 1; fi
+if [[ $TR_STATE != /* ]]; then tr_error 'The state directory must be an absolute path.'; exit 1; fi
+info=$(tr_tmux display-message -p '#{pid} #{start_time} #{version}') || exit 1
+read -r server_pid started version <<< "$info"
+if ! tr_uint "$server_pid" || ! tr_uint "$started" || ! tr_compatible "$version"; then
+    tr_error "The running server must be tmux 3.8 or newer (found ${version:-unknown})."; exit 1
+fi
+if [[ -z $TR_SOCKET ]]; then TR_SOCKET=$(tr_tmux display-message -p '#{socket_path}') || exit 1; fi
+TR_SERVER=$started-$server_pid
+mkdir -p -- "$TR_STATE/snapshots" "$TR_STATE/servers/$TR_SERVER" || exit 1
+
+run_transaction() {
+    local phase=$1 output result=0
+    shift
+    tr_tmux set-option -g @tmux-restore-phase "$phase" || return 1
+    output=$("$@" 2>&1) || result=$?
+    tr_tmux set-option -gu @tmux-restore-phase >/dev/null 2>&1 || :
+    if [[ $result == 0 ]]; then
+        tr_tmux set-option -gu @tmux-restore-error >/dev/null 2>&1 || :
+        tr_tmux set-option -gu @tmux-restore-paused >/dev/null 2>&1 || :
+    else
+        output=${output:-"$phase failed"}
+        tr_tmux set-option -g @tmux-restore-error "$output" >/dev/null 2>&1 || :
+        printf '%s\n' "$output" >&2
+    fi
+    return "$result"
+}
+
+case $action in
+    save)
+        if tr_lock "$TR_STATE/snapshot.lock" wait "$TR_CLI" --socket "$TR_SOCKET" _save; then
+            printf '%s\n' 'Tmux workspace saved.'
+            tr_tmux display-message 'Tmux workspace saved.' >/dev/null 2>&1 || :
+        else
+            exit 1
+        fi
+        ;;
+    load)
+        if tr_lock "$TR_STATE/snapshot.lock" wait "$TR_CLI" --socket "$TR_SOCKET" _load; then
+            printf '%s\n' 'Tmux workspace restored.'
+        else
+            exit 1
+        fi
+        ;;
+    status)
+        snapshot=$(tr_latest) || snapshot=
+        phase=$(tr_option @tmux-restore-phase idle) || exit 1
+        # An interrupted process cannot hold the OS lock. Ignore its stale phase.
+        if [[ $phase != idle ]] && tr_lock "$TR_STATE/snapshot.lock" try true; then phase=idle; fi
+        printf 'State: %s\n' "$phase"
+        printf 'Snapshot: %s\n' "${snapshot:-none}"
+        if [[ -n $snapshot ]]; then
+            { read -r format; read -r epoch; } < "$snapshot/meta"
+            printf 'Last saved: %s\n' "$(tr_timestamp "$epoch" '+%Y-%m-%d %H:%M:%S %Z')"
+        fi
+        printf 'Autosave paused: %s\n' "$(tr_option @tmux-restore-paused 0)"
+        printf 'Last error: %s\n' "$(tr_option @tmux-restore-error none)"
+        ;;
+    _install) tr_bootstrap ;;
+    _worker)
+        result=0
+        tr_lock "$TR_STATE/servers/$TR_SERVER/worker.lock" try "$TR_CLI" --socket "$TR_SOCKET" _loop || result=$?
+        [[ $result == 0 || $result == 75 ]]
+        ;;
+    _loop) tr_worker ;;
+    _recover) tr_recover ;;
+    _detach)
+        clients=$(tr_tmux list-clients -F '#{client_name}') || exit 1
+        paused=$(tr_option @tmux-restore-paused 0) || exit 1
+        if [[ -z $clients && $paused != 1 ]]; then
+            tr_lock "$TR_STATE/snapshot.lock" wait "$TR_CLI" --socket "$TR_SOCKET" _save
+        fi
+        ;;
+    _save) run_transaction saving tr_snapshot ;;
+    _load)
+        snapshot=$(tr_latest) || { tr_error 'No snapshot found.'; exit 1; }
+        run_transaction restoring tr_load "$snapshot"
+        ;;
+esac

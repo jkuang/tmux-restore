@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tmux-restore prompt palettes</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 24px auto; max-width: 900px; padding: 0 16px; font: 15px system-ui; }
+  h1 { font-size: 20px; }
+  h2 { margin: 18px 0 6px; font-size: 14px; }
+  pre {
+    margin: 0;
+    padding: 12px 16px;
+    border-radius: 6px;
+    background: light-dark(#f4f6f8, #121619);
+    color: light-dark(#49515b, #bbc3cb);
+    font: 13px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .header { color: var(--header-color); font-weight: var(--header-weight); }
+  .command { color: var(--command-color); font-weight: var(--command-weight); }
+</style>
+<h1>Header colors with a bold teal command</h1>
+<label for="theme">Terminal background</label>
+<select id="theme">
+  <option value="light dark">System</option>
+  <option value="dark" selected>Dark</option>
+  <option value="light">Light</option>
+</select>
+<main id="samples" style="color-scheme: dark"></main>
+<template id="sample">
+  <section>
+    <h2></h2>
+    <pre><code>$ npm ci &amp;&amp; npm run dev
+Local: http://localhost:5173/
+
+<span class="header">Tmux restored · ran Nov 19 09:12 · saved 09:38 · [r]estore / any other key to dismiss</span>
+<span class="command">npm ci &amp;&amp; npm run dev</span></code></pre>
+  </section>
+</template>
+<script>
+  const colors = {
+    Cyan: ['#00677b', '#79dbe8'],
+    Teal: ['#0f766e', '#5eead4'],
+    Amber: ['#865300', '#ffd075'],
+    Lavender: ['#6547a4', '#c9adfa'],
+    Mint: ['#00664c', '#95e7c7'],
+    Blue: ['#215caa', '#93bdff'],
+    Neutral: ['#313944', '#dce3ea'],
+    Green: ['#316020', '#b1df8c'],
+    Peach: ['#924526', '#ffb899'],
+    Pink: ['#8f3a61', '#f5a7cb'],
+    White: ['#252932', '#f3f7fb'],
+  };
+  const headers = ['Blue', 'Cyan', 'Lavender', 'Mint', 'Green', 'Amber', 'Peach', 'Pink', 'Neutral', 'White'];
+  const samples = document.getElementById('samples');
+  const template = document.getElementById('sample');
+  const tone = (color) => `light-dark(${colors[color].join(', ')})`;
+  for (const [index, header] of headers.entries()) {
+    const item = template.content.cloneNode(true);
+    const section = item.querySelector('section');
+    item.querySelector('h2').textContent = `${index + 1}. ${header}${index === 0 ? ' · original option 8' : index === 5 ? ' · selected' : ''}`;
+    section.style.setProperty('--header-color', tone(header));
+    section.style.setProperty('--command-color', tone('Teal'));
+    section.style.setProperty('--header-weight', '400');
+    section.style.setProperty('--command-weight', '700');
+    samples.append(item);
+  }
+  document.getElementById('theme').addEventListener('change', (event) => {
+    samples.style.colorScheme = event.target.value;
+  });
+</script>
+</html>
